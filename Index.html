@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Masuk · DAFTAR PASSWORD HYBRID</title>
+<style>body{font:16px Arial,sans-serif;max-width:420px;margin:40px auto;padding:20px;color:#203449}h1{font-size:22px}#message{line-height:1.5}button{padding:12px}</style>
+</head><body><h1>DAFTAR PASSWORD HYBRID</h1><p>Masuk menggunakan akun Google yang diizinkan pengelola.</p><div id="googleButton"></div><p id="message" role="status">Menunggu aplikasi…</p>
+<script>
+'use strict';
+// SETUP REQUIRED: exact Apps Script iframe origins from the candidate's setup details.
+// Add both ADMIN/USER origins if different. No wildcard, suffix match or "*".
+const ALLOWED_APP_ORIGINS = Object.freeze([
+ 'https://REPLACE_WITH_EXACT_APP_IFRAME_ORIGIN'
+]);
+let initialized=false,appWindow=window.opener,appOrigin=null,nonce=null;
+const message=text=>document.getElementById('message').textContent=text;
+window.addEventListener('message',async event=>{
+ if(initialized||!appWindow||event.source!==appWindow||!ALLOWED_APP_ORIGINS.includes(event.origin))return;
+ const data=event.data;
+ if(!data||data.type!=='HYBRID_GIS_INIT'||typeof data.clientId!=='string'||!/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(data.clientId)||typeof data.nonce!=='string'||!/^[a-f0-9]{64}$/.test(data.nonce))return;
+ initialized=true;appOrigin=event.origin;nonce=data.nonce;
+ try{
+  await new Promise((resolve,reject)=>{
+   const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;
+   const timer=setTimeout(()=>reject(new Error('Pustaka Google belum dimuat.')),15000);
+   script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=()=>{clearTimeout(timer);reject(new Error('Pustaka Google tidak dapat dimuat.'));};document.head.append(script);
+  });
+  // GIS runs top-level at the hosted HTTPS origin, never in the Apps Script iframe.
+  google.accounts.id.initialize({client_id:data.clientId,nonce,ux_mode:'popup',auto_select:false,
+   use_fedcm_for_prompt:false,use_fedcm_for_button:true,
+   callback:response=>{
+    if(!appWindow||appWindow.closed||typeof response.credential!=='string'){message('Aplikasi sudah ditutup. Buka kembali aplikasi.');return;}
+    appWindow.postMessage({type:'HYBRID_GIS_TOKEN',nonce,credential:response.credential},appOrigin);
+    response.credential=null;document.getElementById('googleButton').replaceChildren();message('Kembali ke aplikasi untuk hasil verifikasi.');
+    google.accounts.id.disableAutoSelect();
+   }});
+  google.accounts.id.renderButton(document.getElementById('googleButton'),{type:'standard',theme:'outline',size:'large',text:'signin_with',width:280});
+  message('Pilih akun Google.');
+ }catch(e){message(e.message+' Tutup halaman ini dan muat ulang login aplikasi.');}
+});
+if(!appWindow)message('Buka halaman ini melalui tombol Masuk dengan Google di aplikasi.');
+else for(const origin of ALLOWED_APP_ORIGINS){
+ try{appWindow.postMessage({type:'HYBRID_GIS_READY'},origin);}catch(e){}
+}
+// No auth storage/token logging; no OAuth secret; no database or RPC access.
+</script></body></html>
